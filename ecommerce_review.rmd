@@ -1,0 +1,116 @@
+---
+title: "ecommerce_review_sentiment"
+output: html_document
+---
+
+```{r Setup, include=FALSE}
+
+#Set working directory. I'm using a local machine but you can choose to pull data in any way you like.
+setwd("C:/Users/oguner/Documents/ecommerce_review_sentiment/ecommerce_review_sentiment")
+
+#We'll use these libraries for different actions we'll take.
+library(NLP)
+library(stringr)
+library(tm)
+library(wordcloud)
+library(dplyr)
+library(udpipe)
+library(ggplot2)
+library(tidytext)
+
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r Pre-processing}
+
+#First, let's load our data. I'm loading from my local machine for simplicity purposes but you can pull data directly from other sources.
+review<-read.csv("ecommerce_review.csv")
+review$text<-review$text
+
+#One of the important parts of text pre-processing is getting rid of punctuation.
+review$text <- lapply(review$text, function(x) {
+  x = gsub('[[:punct:]]', '', x)})
+
+#This was an important step I missed when I initially took on this project. Before I merged negative words, phrases such as "not good" or "not great" were separated and therefore the counts for "good" and "great" would increase. In this case, they will appear as "notgood" or "notgreat". We can easily distinguish between positive and negative.
+review$text <- lapply(review$text, function(x) {
+  x= gsub('not ','not',x)})
+
+#The next two steps will include cleaning out spaces.This will prevent the machine reading the words differently in case spaces between them are not standardized.
+review$text <- lapply(review$text, function(x) {
+  x= gsub('  ',' ',x)})
+
+#Let's clean up triple spaces as well. I think double and triple will do it for now. People rarely put in more spaces between words.
+review$text <- lapply(review$text, function(x) {
+  x= gsub('   ',' ',x)})
+
+#Converting to lowercase is another important function. This way, any capitalized words will be treated the same as uncapitalized words as long as the exact same letters and letter orders are used.
+review$text <- lapply(review$text, function(x) {
+  x= str_to_lower(x)  
+  x = removeWords(x, words = stopwords(kind = "en"))})
+
+#Pre-processing ends here.
+```
+
+``` {r Transformation}
+#Next step is converting the raw text to a character. Next stages will include converting characters into corpus and matrix, which will form our dataframe. The end result we want to achieve is basically a heatmap (a dataframe) where each row is a review and each column is the each word that appears at least once in the entire raw text pool.
+review$text<-as.character(review$text)
+
+#Converting characters to corpus...
+review_corpus <- VCorpus(VectorSource(review$text))
+
+#Creating our document term matrics
+review_dtm <- DocumentTermMatrix(review_corpus)
+
+#Removing sparse terms in this step, where terms from the dataset are removed which has at least a 'sparse' percentage of empty (i.e., terms occurring 0 times in a document) according to the tm documentation.
+review_dtm <- removeSparseTerms(review_dtm, 0.99)
+
+#Last step of the data transformation is converting the document-term matrics into a dataframe to achieve the desired solution of a heatmap of each words and frequency with which they are used in each row (i.e. review).
+DTM_df <- as.data.frame(as.matrix(review_dtm))
+
+#Creating word counts for each row...
+wordcounts <- colSums(DTM_df)
+
+#Labeling word counts with the corresponding word's name...
+wordNames <- names(DTM_df)
+
+#This was the last stage in data transformation. We can move on to the visualization part.
+```
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r Visualization, echo=FALSE}
+# Let's try a simple bar chart:
+wordcount_barplot <- tibble(line = 1:nrow(review), text = review$text) %>%
+    unnest_tokens(word, text) %>%
+    anti_join(stop_words) %>%
+    count(word, sort = TRUE)
+barplot(height=head(wordcount_barplot,10)$n, names.arg=head(wordcount_barplot,10)$word, xlab="Words", ylab="Frequency", col="tomato1", main="Word frequency in reviews")
+
+# I'm not a fan of bar charts in natural language processing. The n you are able to discern with a naked eye is extremely low and it doesn't tell a story. I've found a that a wordcloud is infinitely more impactful with business stakeholders if doneused correctly. Let's create a wordcloud with the output data we had in our previous chunk:
+wordcloud(c(wordNames), c(wordcounts), scale=c(4,.5), max.words=Inf, rot.per=.1, colors = brewer.pal(4, "Dark2"), ordered.colors=FALSE)
+
+# There are immediately a few issues with this: We can see that irrelevant words such as "and", "but", "this" are visible with big letters (which correspond to frequency). Truth be told, no one cares about these words. Depending on the context, you might want to keep some of these stopwords. For instance, a stakeholder wanted to see how many times the word "very" used in different contexts to determine the strength of adjectives used. That didn't lead to anywhere in our project but you might want to reconsider the stopwords you're trying to remove. So we'll add the code right below to remove the most frequent stopwords used in English language and re-run our code.
+
+###review$text <- lapply(review$text, function(x) {
+###  x = removeWords(x, words = stopwords(kind = "en"))})
+
+# Now let's take a look:
+wordcloud(c(wordNames), c(wordcounts), scale=c(4,.5), max.words=200, rot.per=.1, colors = brewer.pal(4, "Dark2"), ordered.colors=FALSE)
+
+# Looks like the words "dress", "love", and "size" are teh 2 most commonly used words, in that order. Next comes "like", "just", "top", "wear", and "fit'. Let's make our job easier and get word counts in a table:
+tibble(wordNames, wordcounts) %>% arrange(desc(wordcounts)) %>% top_n(15)
+
+# Let's put these results in a dataframe to be used later:
+wordcounts <- as.data.frame(wordcounts)
+wordNames <- as.data.frame(wordNames)
+
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
