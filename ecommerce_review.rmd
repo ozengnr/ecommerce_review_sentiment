@@ -1,6 +1,6 @@
 ---
 title: "ecommerce_review_sentiment"
-output: html_document
+output: rmarkdown::github_document
 ---
 ## Sentiment Analysis for E-commerce Reviews
 
