@@ -2,13 +2,16 @@
 title: "ecommerce_review_sentiment"
 output: html_document
 ---
+## Sentiment Analysis for E-commerce Reviews
 
-```{r Setup, include=FALSE}
+Sentiment analysis in R is a powerful tool you can use when quantifying text. Reading and processing vast amounts of text is often not viable and machine learning methods can help cope with that. In this case, we will be working with a sample dataset containing reviews for clothing items sold in the e-commerce space. You can apply the same techniques in any industry. I usually apply this to our biannual Net Promoter Score (NPS) survey, when our 70K+ users are requested to answer how likely they are to recommend our software. 
 
-#Set working directory. I'm using a local machine but you can choose to pull data in any way you like.
+First, we set up our working directory. I'm using a local machine but you can choose to pull data in any way you like.
+```{r wd, include=FALSE}
 setwd("C:/Users/oguner/Documents/ecommerce_review_sentiment/ecommerce_review_sentiment")
-
-#We'll use these libraries for different actions we'll take.
+```
+Next, let's import some R libraries.We'll use these libraries for different actions we'll take. 
+``` {r libs}
 library(NLP)
 library(stringr)
 library(tm)
@@ -17,69 +20,120 @@ library(dplyr)
 library(udpipe)
 library(ggplot2)
 library(tidytext)
-
-knitr::opts_chunk$set(echo = TRUE)
 ```
 
-## R Markdown
+Let's load our data and take a look at it:
 
-This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
-
-When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
-
-```{r Pre-processing}
-
-#First, let's load our data. I'm loading from my local machine for simplicity purposes but you can pull data directly from other sources.
+```{r load}
 review<-read.csv("ecommerce_review.csv")
 review$text<-review$text
+head(review)
+```
+This is great, but we're more interested in the actual text column:
 
-#One of the important parts of text pre-processing is getting rid of punctuation.
+```{r loadr}
+head(review$text)
+```
+
+Looks like we have our text data. Let's move on to pre-processing.
+
+## Pre-processing
+One of the important parts of text pre-processing is getting rid of punctuation.
+``` {r punct}
 review$text <- lapply(review$text, function(x) {
   x = gsub('[[:punct:]]', '', x)})
+```
 
-#This was an important step I missed when I initially took on this project. Before I merged negative words, phrases such as "not good" or "not great" were separated and therefore the counts for "good" and "great" would increase. In this case, they will appear as "notgood" or "notgreat". We can easily distinguish between positive and negative.
+This was an important step I missed when I initially took on a similar project. Before I merged negative words, phrases such as "not good" or "not great" were separated and therefore the counts for "good" and "great" would increase. In this case, they will appear as "notgood" or "notgreat". We can easily distinguish between positive and negative.
+
+``` {r negs}
 review$text <- lapply(review$text, function(x) {
   x= gsub('not ','not',x)})
+```
 
-#The next two steps will include cleaning out spaces.This will prevent the machine reading the words differently in case spaces between them are not standardized.
+The next two steps will include cleaning out spaces.This will prevent the machine reading the words differently in case spaces between them are not standardized.
+
+``` {r spaces2}
 review$text <- lapply(review$text, function(x) {
   x= gsub('  ',' ',x)})
+```
 
-#Let's clean up triple spaces as well. I think double and triple will do it for now. People rarely put in more spaces between words.
+Let's clean up triple spaces as well. I think double and triple will do it for now. People rarely put in more spaces between words.
+``` {r spaces3}
 review$text <- lapply(review$text, function(x) {
   x= gsub('   ',' ',x)})
+```
 
-#Converting to lowercase is another important function. This way, any capitalized words will be treated the same as uncapitalized words as long as the exact same letters and letter orders are used.
+Converting to lowercase is another important function. This way, any capitalized words will be treated the same as uncapitalized words as long as the exact same letters and letter orders are used.
+
+```  {r lowerandstops}
 review$text <- lapply(review$text, function(x) {
   x= str_to_lower(x)  
   x = removeWords(x, words = stopwords(kind = "en"))})
+```
+Now let's take a look at our data:
 
-#Pre-processing ends here.
+``` {r view}
+head(review$text)
+```
+Looks like we cleaned up our text field nicely. Pre-processing ends here. Let's move onto transforming our data.
+
+
+## Transformation
+Next step is converting the raw text to a character. Next stages will include converting characters into corpus and matrix, which will form our dataframe. The end result we want to achieve is basically a heatmap (a dataframe) where each row is a review and each column is the each word that appears at least once in the entire raw text pool.
+
+Let's convert our field to characters:
+
+``` {r char}
+review$text<-as.character(review$text)
 ```
 
-``` {r Transformation}
-#Next step is converting the raw text to a character. Next stages will include converting characters into corpus and matrix, which will form our dataframe. The end result we want to achieve is basically a heatmap (a dataframe) where each row is a review and each column is the each word that appears at least once in the entire raw text pool.
-review$text<-as.character(review$text)
-
-#Converting characters to corpus...
+Converting characters to corpus...
+``` {r corpus}
 review_corpus <- VCorpus(VectorSource(review$text))
+```
 
-#Creating our document term matrics
+We'll create a document term matrix from our corpus:
+
+``` {r dtm}
 review_dtm <- DocumentTermMatrix(review_corpus)
+```
 
-#Removing sparse terms in this step, where terms from the dataset are removed which has at least a 'sparse' percentage of empty (i.e., terms occurring 0 times in a document) according to the tm documentation.
+In this step, we'll removesparse term. Certain terms from the dataset are removed which has at least a 'sparse' percentage of empty (i.e., terms occurring 0 times in a document) according to the tm documentation.
+
+``` {r sparse}
 review_dtm <- removeSparseTerms(review_dtm, 0.99)
+```
 
-#Last step of the data transformation is converting the document-term matrics into a dataframe to achieve the desired solution of a heatmap of each words and frequency with which they are used in each row (i.e. review).
+Last step of the data transformation is converting the document-term matrics into a dataframe to achieve the desired solution of a heatmap of each words and frequency with which they are used in each row (i.e. review).
+
+``` {r df}
 DTM_df <- as.data.frame(as.matrix(review_dtm))
+```
 
 #Creating word counts for each row...
+
+``` {r wordcounts}
 wordcounts <- colSums(DTM_df)
+```
 
-#Labeling word counts with the corresponding word's name...
+Labeling word counts with the corresponding word's name...
+
+``` {r wordNames} 
 wordNames <- names(DTM_df)
+```
+Let's look at what our final form looks like:
 
-#This was the last stage in data transformation. We can move on to the visualization part.
+``` {r df View}
+head(DTM_df)
+```
+
+We achieved our goal of creating a heatmap where each row is a review and each column is a word that appears at least once in the entire dataset. This was the last stage in data transformation. We can move on to the visualization part.
+
+## Visualization
+
+
+
 ```
 ## Including Plots
 
